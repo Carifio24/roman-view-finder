@@ -1,6 +1,6 @@
 /* eslint-disable */
 
-import { Color, Coordinates, Dates, RenderContext, Settings, SimpleLineList, SpaceTimeController, TriangleList, Vector3d, WWTControl } from "@wwtelescope/engine";
+import { Color, Coordinates, Dates, Matrix3d, RenderContext, SimpleLineList, Vector3d, WWTControl } from "@wwtelescope/engine";
 import { horizontalToEquatorial } from "./utils";
 import { D2H, D2R, H2D } from "@wwtelescope/astro";
 import { TriangleList2D } from "./wwt-hacks";
@@ -113,6 +113,63 @@ function _getWorldPoints(wwt: WWTControl, screenPts: Point[]): Point[] {
   });
 }
 
+function toCartesian(point: Point): Vector3d {
+  return Coordinates.raDecTo3d(point[0] / 15, point[1]);
+}
+
+function getCartesianPoints(worldPoints: Point[]): Vector3d[] {
+  return worldPoints.map(toCartesian);
+}
+
+// TODO: This doesn't exist! We should add it to the engine
+function addMatrices(m1: Matrix3d, m2: Matrix3d) {
+  return Matrix3d.create(
+    m1.get_m11() + m2.get_m11(),
+    m1.get_m12() + m2.get_m12(),
+    m1.get_m13() + m2.get_m13(),
+    m1.get_m14() + m2.get_m14(),
+
+    m1.get_m21() + m2.get_m21(),
+    m1.get_m22() + m2.get_m22(),
+    m1.get_m23() + m2.get_m23(),
+    m1.get_m24() + m2.get_m24(),
+
+    m1.get_m31() + m2.get_m31(),
+    m1.get_m32() + m2.get_m32(),
+    m1.get_m33() + m2.get_m33(),
+    m1.get_m34() + m2.get_m34(),
+
+    m1.get_offsetX() + m2.get_offsetX(),
+    m1.get_offsetY() + m2.get_offsetY(),
+    m1.get_offsetZ() + m2.get_offsetZ(),
+    m1.get_m44() + m2.get_m44(),
+  );
+}
+
+
+function greatCircleMatrix(oldPosition: Point, newPosition: Point) {
+  const oldCartesian = toCartesian(oldPosition);
+  const newCartesian = toCartesian(newPosition);
+  console.log(oldCartesian, newCartesian);
+  const u = Vector3d.cross(oldCartesian, newCartesian);
+  const cosAlpha = Vector3d.dot(oldCartesian, newCartesian);
+  console.log(cosAlpha);
+  console.log(u);
+  const V = Matrix3d.create(0, u.z, -u.y, 0,
+                            -u.z, 0, u.x, 0,
+                            u.y, -u.x, 0, 0,
+                            0, 0, 0, 0);
+  const Vsq = Matrix3d.multiplyMatrix(V, V);
+
+  const k = 1 / (1 + cosAlpha);
+  Vsq.scale(Vector3d.create(k, k, k));
+  console.log(V);
+  console.log(Vsq);
+
+  console.log("--------");
+  return addMatrices(Matrix3d.get_identity(), addMatrices(V, Vsq));
+}
+
 // NB: Clip space is the space [-1, 1]^2
 function convertScreenPointsToClip(wwt: WWTControl, screenPts: Point[][]): Point[][] {
   const width = wwt.renderContext.width;
@@ -129,13 +186,16 @@ interface DrawFootprintOptions {
   color: Color;
   fill: boolean;
   fillOpacity: number;
+  center?: [number, number];
 }
 
 let fakeRendered = false;
 export function drawFootprint(wwt: WWTControl, options: DrawFootprintOptions) {
+
+  const center = options.center ?? [0, 0];
   if (!fakeRendered) {
     const shadow = document.getElementById("shadow") as HTMLCanvasElement;
-    fakeControl.gotoRADecZoom(0, 0, wwt.renderContext.viewCamera.zoom, true);
+    fakeControl.gotoRADecZoom(...center, wwt.renderContext.viewCamera.zoom, true),
     // eslint-disable-next-line @typescript-eslint/ban-ts-comment
     // @ts-ignore
     window.fake = fakeControl; fakeControl.canvas = shadow; fakeControl.renderContext.gl = shadow.getContext("webgl2"); fakeControl.renderContext.set_backgroundImageset(wwt.renderContext.get_backgroundImageset());
@@ -152,17 +212,19 @@ export function drawFootprint(wwt: WWTControl, options: DrawFootprintOptions) {
   const camera = wwt.renderContext.viewCamera;
   fakeControl.renderContext.viewCamera.zoom = camera.zoom;
 
+  const newCenter: Point = [wwt.renderContext.get_RA() * 15, wwt.renderContext.get_dec()];
+  console.log(center, newCenter);
+
   // eslint-disable-next-line @typescript-eslint/ban-ts-comment
   // @ts-ignore
   fakeControl.renderContext.set_projection(wwt.renderContext.get_projection());
 
-  const cosDec = Math.abs(Math.cos(wwt.renderContext.get_dec() * D2R));
-  console.log(cosDec);
-  console.log(shiftedCorners);
-  const adjustedCorners: Point[][] = shiftedCorners.map(box => box.map(pair => [cosDec * pair[0], pair[1]]));
-  console.log(adjustedCorners);
-  console.log("------");
-  const screenPoints = adjustedCorners.map(box => getScreenPoints(fakeControl, box));
+  const cartesianPoints = shiftedCorners.map(getCartesianPoints);
+  const transportMatrix = greatCircleMatrix(center, newCenter);
+  cartesianPoints.forEach(box => transportMatrix.transformArray(box));
+
+  const transportedWorldPoints: Point[][] = cartesianPoints.map(box => box.map(pt => [Math.acos(pt.z), Math.atan2(pt.y, pt.x)]));
+  const screenPoints = transportedWorldPoints.map(box => getScreenPoints(fakeControl, box));
   const clipPoints = convertScreenPointsToClip(fakeControl, screenPoints);
 
   const triangles = new TriangleList2D();
