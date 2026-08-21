@@ -1,6 +1,8 @@
 <template>
   <v-app id="app" :style="cssVars">
-    <div id="main-content">
+    <div id="main-content"
+      @pointerdown="event => console.log(event.offsetX, event.offsetY)"
+    >
       <WorldWideTelescope :wwt-namespace="wwtNamespace"></WorldWideTelescope>
 
       <canvas id="shadow"></canvas>
@@ -529,7 +531,7 @@ import { storeToRefs } from "pinia";
 
 import * as wwtlib from "@wwtelescope/engine";
 
-import { drawFootprint } from "./footprint";
+import { drawFootprint, drawStaticFootprint } from "./footprint";
 import { renderOneFrame, splitString } from "./wwt-hacks";
 
 import { ResolvedObject } from "./simbad_resolvers";
@@ -571,10 +573,11 @@ const { smAndDown } = useDisplay();
 const props = withDefaults(defineProps<RomanFovProps>(), {
   wwtNamespace: "roman-fov",
   initialCameraParams: () => {
+    const f = 4;
     return {
-      raRad: 1.4612,
-      decRad: -0.09646,
-      zoomDeg: 60
+      raRad: f * 15 * D2R,
+      decRad: f * 10 * D2R,
+      zoomDeg: 360
     };
   }
 });
@@ -674,14 +677,20 @@ onMounted(() => {
     }
 
     settings.set_galacticMode(galactic.value);
+    settings.set_showGrid(true);
+    settings.set_showEquatorialGridText(true);
     settings.set_showCrosshairs(crosshairs.value);
     settings.set_crosshairsColor(crosshairsColor.value);
 
     const control = WWTControl.singleton;
+    const cameraParams = { ...props.initialCameraParams };
+    store.gotoRADecZoom({
+      ...cameraParams,
+      instant: true
+    }).then(() => positionSet.value = true);
     control.renderOneFrame();
     control.renderOneFrame = renderOneFrame.bind(control);
 
-    const cameraParams = { ...props.initialCameraParams };
     const query = new URLSearchParams(window.location.search);
 
     const paramNames: Record<string, keyof CameraParams> = {
@@ -705,19 +714,22 @@ onMounted(() => {
     // control._drawCrosshairs = (_renderContext: RenderContext) => { drawFootprint(WWTControl.singleton); };
     // eslint-disable-next-line @typescript-eslint/ban-ts-comment
     // @ts-ignore
-    control.renderFrameCallback = function (wwt: WWTControl) {
+    window.wwt = control; control.renderFrameCallback = function (wwt: WWTControl) {
       drawFootprint(wwt, {
         color: footprintColor.value,
         fill: fill.value,
         fillOpacity: fillOpacity.value,
       });
+      drawStaticFootprint(wwt, {
+        color: Color.fromArgb(255, 0, 0, 255),
+        fill: false,
+        fillOpacity: 1,
+      });
     };
+
     WWTControl.singleton.renderOneFrame();
 
-    store.gotoRADecZoom({
-      ...cameraParams,
-      instant: true
-    }).then(() => positionSet.value = true);
+
 
     await store.loadImageCollection({ url: "bg.wtml", loadChildFolders: false }).then(_folder => {
       backgroundImagesets.push(new BackgroundImageset("unWISE", "unWISE color, from W2 and W1 bands"));

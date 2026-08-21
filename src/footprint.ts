@@ -2,7 +2,7 @@
 
 import { Color, Coordinates, Dates, RenderContext, Settings, SimpleLineList, SpaceTimeController, TriangleList, Vector3d, WWTControl } from "@wwtelescope/engine";
 import { horizontalToEquatorial } from "./utils";
-import { D2H, H2D } from "@wwtelescope/astro";
+import { D2H, D2R, H2D } from "@wwtelescope/astro";
 import { TriangleList2D } from "./wwt-hacks";
 
 type Point = [number, number];
@@ -79,7 +79,10 @@ const corners: Point[][] =
  [[0.39971582947989487, -0.2063223607808576],
   [0.277960646601634, -0.20897140269070094],
   [0.27995993414475323, -0.08990933274855276],
-  [0.4025665285872352, -0.08765786121144925]]]; 
+  [0.4025665285872352, -0.08765786121144925]]]
+.map(box => box.map(pair => [pair[0] > 359 ? pair[0] - 360 : pair[0], pair[1]]));
+
+// const corners = [ [ [ 0, 0 ], [ 0, 10 ], [ 15, 10 ], [ 15, 0 ] ] ];
 
 // const nRegions = corners.length;
 const nPoints = corners.reduce((currVal, corner) => currVal + corner.length, 0);
@@ -93,7 +96,7 @@ const meanIndex = (index: number) => corners.reduce((currVal, corner) => currVal
 // const meanDec = meanIndex(1);
 const meanRA = 0;
 const meanDec = 0;
-const shiftedCorners: Point[][] = corners.map(corner => corner.map(pair => [pair[0] - meanRA, pair[1] - meanDec]));
+const shiftedCorners: Point[][] = corners.map(corner => corner.map(pair => [pair[0] - meanRA, meanDec - pair[1]]));
 let positionedShiftedCorners: Point[][] = shiftedCorners;
 
 function getScreenPoints(wwt: WWTControl, worldPts: Point[]): Point[] {
@@ -116,8 +119,8 @@ function convertScreenPointsToClip(wwt: WWTControl, screenPts: Point[][]): Point
   const height = wwt.renderContext.height;
   const slopeH = 2 / width;
   const interceptH = -1;
-  const slopeV = 2 / height;
-  const interceptV = -1;
+  const slopeV = -2 / height;
+  const interceptV = 1;
   const transform = (point: Point): Point => [point[0] * slopeH + interceptH, point[1] * slopeV + interceptV];
   return screenPts.map(box => box.map(transform));
 }
@@ -132,14 +135,14 @@ let fakeRendered = false;
 export function drawFootprint(wwt: WWTControl, options: DrawFootprintOptions) {
   if (!fakeRendered) {
     const shadow = document.getElementById("shadow") as HTMLCanvasElement;
-    positionedShiftedCorners = shiftedCorners.map(corner => corner.map(pair => [pair[0] + wwt.renderContext.get_RA() * 15, pair[1] + wwt.renderContext.get_dec()]));
+    fakeControl.gotoRADecZoom(0, 0, wwt.renderContext.viewCamera.zoom, true);
     // eslint-disable-next-line @typescript-eslint/ban-ts-comment
     // @ts-ignore
-    fakeControl.canvas = shadow; fakeControl.renderContext.gl = shadow.getContext("webgl2"); fakeControl.renderContext.set_backgroundImageset(wwt.renderContext.get_backgroundImageset());
-    fakeControl.renderOneFrame();
+    window.fake = fakeControl; fakeControl.canvas = shadow; fakeControl.renderContext.gl = shadow.getContext("webgl2"); fakeControl.renderContext.set_backgroundImageset(wwt.renderContext.get_backgroundImageset());
     // eslint-disable-next-line @typescript-eslint/ban-ts-comment
     // @ts-ignore
     fakeControl.renderContext.set_world(wwt.renderContext.get_world()); fakeControl.renderContext.set_view(wwt.renderContext.get_view()); fakeControl.renderContext.set_projection(wwt.renderContext.get_projection());
+    fakeControl.renderOneFrame();
     fakeRendered = true;
   }
   const footprint = new SimpleLineList();
@@ -152,7 +155,14 @@ export function drawFootprint(wwt: WWTControl, options: DrawFootprintOptions) {
   // eslint-disable-next-line @typescript-eslint/ban-ts-comment
   // @ts-ignore
   fakeControl.renderContext.set_projection(wwt.renderContext.get_projection());
-  const screenPoints = positionedShiftedCorners.map(box => getScreenPoints(fakeControl, box));
+
+  const cosDec = Math.abs(Math.cos(wwt.renderContext.get_dec() * D2R));
+  console.log(cosDec);
+  console.log(shiftedCorners);
+  const adjustedCorners: Point[][] = shiftedCorners.map(box => box.map(pair => [cosDec * pair[0], pair[1]]));
+  console.log(adjustedCorners);
+  console.log("------");
+  const screenPoints = adjustedCorners.map(box => getScreenPoints(fakeControl, box));
   const clipPoints = convertScreenPointsToClip(fakeControl, screenPoints);
 
   const triangles = new TriangleList2D();
@@ -186,6 +196,46 @@ export function drawFootprint(wwt: WWTControl, options: DrawFootprintOptions) {
   //   });
   // }
 
+  footprint.drawLines(wwt.renderContext, 1, options.color);
+
+  if (options.fill) {
+     triangles.draw(wwt.renderContext, options.fillOpacity, true);
+  }
+}
+
+positionedShiftedCorners = shiftedCorners.map(corner => corner.map(pair => [pair[0] + 60, pair[1] + 40]));
+export function drawStaticFootprint(wwt: WWTControl, options: DrawFootprintOptions) {
+  
+  const footprint = new SimpleLineList();
+  footprint.pure2D = true;
+  footprint.set_depthBuffered(true);
+
+
+  // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+  // @ts-ignore
+  const screenPoints = positionedShiftedCorners.map(box => getScreenPoints(wwt, box));
+  const clipPoints = convertScreenPointsToClip(wwt, screenPoints);
+
+  const triangles = new TriangleList2D();
+  triangles.pure2D = true;
+  triangles.depthBuffered = true;
+  const date = new Dates(0, 1);
+
+  clipPoints.forEach(box => {
+    const vectors = box.map(pt => Vector3d.create(...pt, 0));
+    for (let i = 0; i < box.length - 1; i++) {
+      footprint.addLine(vectors[i], vectors[i+1]);
+    }
+    footprint.addLine(vectors[box.length - 1], vectors[0]);
+
+    if (options.fill) {
+      const triangleColor = Color.fromArgb(Math.round(options.fillOpacity * 255), options.color.r, options.color.g, options.color.b);
+      triangles.addTriangle(vectors[0], vectors[1], vectors[2], triangleColor, date);
+      triangles.addTriangle(vectors[2], vectors[3], vectors[0], triangleColor, date);
+    }
+  });
+
+ 
   footprint.drawLines(wwt.renderContext, 1, options.color);
 
   if (options.fill) {
