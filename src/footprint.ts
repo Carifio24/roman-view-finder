@@ -1,7 +1,7 @@
 /* eslint-disable */
 
 import { Annotation2, Poly2 } from "./Annotation2";
-import { Color, Matrix3d, RenderContext, Vector3d, WWTControl } from "@wwtelescope/engine";
+import { Matrix3d, RenderContext, Vector3d, WWTControl } from "@wwtelescope/engine";
 import { D2R } from "@wwtelescope/astro";
 
 type Point = [number, number];
@@ -12,18 +12,10 @@ function executeWithTransforms(renderContext: RenderContext, callable: CallableF
   projection?: Matrix3d,
 }) {
 
-  // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-  // @ts-expect-error
-  const oldWorld = options.world ? renderContext.get_world().clone() : renderContext.get_world();
-  // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-  // @ts-expect-error
-  const oldWorldBase = options.world ? renderContext.get_worldBase().clone() : renderContext.get_world();
-  // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-  // @ts-expect-error
-  const oldView = options.view ? renderContext.get_view().clone() : renderContext.get_view();
-  // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-  // @ts-expect-error
-  const oldProjection = options.projection ? renderContext.get_projection().clone() : renderContext.get_projection();
+  const oldWorld = transforms.world ? renderContext.get_world().clone() : renderContext.get_world();
+  const oldWorldBase = transforms.world ? renderContext.get_worldBase().clone() : renderContext.get_world();
+  const oldView = transforms.view ? renderContext.get_view().clone() : renderContext.get_view();
+  const oldProjection = transforms.projection ? renderContext.get_projection().clone() : renderContext.get_projection();
 
   if (transforms.world) {
     renderContext.set_worldBase(Matrix3d.multiplyMatrix(transforms.world, renderContext.get_world())); renderContext.set_world(renderContext.get_worldBase().clone());
@@ -146,10 +138,6 @@ export function drawFootprint(wwt: WWTControl, options: DrawFootprintOptions) {
     ann.set_fillColor(options.color);
     ann.set_lineColor(options.color);
   });
-
-  // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-  // @ts-expect-error
-  window.Annotation2 = Annotation2;
 
   function draw(renderContext: RenderContext) {
     Annotation2.prepBatch(renderContext);
