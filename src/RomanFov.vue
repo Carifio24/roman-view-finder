@@ -705,7 +705,7 @@ onMounted(() => {
     // control._drawCrosshairs = (_renderContext: RenderContext) => { drawFootprint(WWTControl.singleton); };
     // eslint-disable-next-line @typescript-eslint/ban-ts-comment
     // @ts-ignore
-    window.wwt = control; control.renderFrameCallback = function (wwt: WWTControl) {
+    control.renderFrameCallback = function (wwt: WWTControl) {
       drawFootprint(wwt, {
         color: footprintColorString.value,
         fill: fill.value,
