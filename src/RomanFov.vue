@@ -138,7 +138,8 @@
               v-model="galactic"
               label="Galactic mode"
               density="compact"
-              hide-details              @keydown.space.prevent="galactic = !galactic"
+              hide-details
+              @keydown.space.prevent="galactic = !galactic"
               @keydown.enter.prevent="galactic = !galactic"            
             ></v-checkbox>
           </div>
@@ -521,7 +522,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed, watch, onBeforeMount, onMounted, nextTick, type Ref } from "vue";
 import { fmtDegLat, fmtHours, D2R, R2D } from "@wwtelescope/astro";
-import { Color, Coordinates, Settings, WWTControl } from "@wwtelescope/engine";
+import { Coordinates, Settings, WWTControl } from "@wwtelescope/engine";
 import { GotoRADecZoomParams, engineStore } from "@wwtelescope/engine-pinia";
 import { BackgroundImageset, supportsTouchscreen, blurActiveElement, useWWTKeyboardControls } from "@cosmicds/vue-toolkit";
 import { useDisplay } from "vuetify";
@@ -613,7 +614,6 @@ const accentColor = ref("#C77FB3");
 const textColor = ref("#F5F0FF");
 const tab = ref(0);
 const footprintColorString = ref("#00F0FF"); // #ff00b7
-const footprintColor = computed(() => Color.load(footprintColorString.value));
 
 const decimalCoordinates = ref(false);
 const raDisplay = computed(() => {
@@ -705,9 +705,9 @@ onMounted(() => {
     // control._drawCrosshairs = (_renderContext: RenderContext) => { drawFootprint(WWTControl.singleton); };
     // eslint-disable-next-line @typescript-eslint/ban-ts-comment
     // @ts-ignore
-    control.renderFrameCallback = function (wwt: WWTControl) {
+    window.wwt = control; control.renderFrameCallback = function (wwt: WWTControl) {
       drawFootprint(wwt, {
-        color: footprintColor.value,
+        color: footprintColorString.value,
         fill: fill.value,
         fillOpacity: fillOpacity.value,
       });

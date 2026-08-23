@@ -1,9 +1,7 @@
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-nocheck
 
-import { Color, RenderContext, TriangleList, WWTControl, ss } from "@wwtelescope/engine";
-import { TriangleShader2D } from "./TriangleShader2D";
-import { WEBGL } from "./webgl_constants";
+import { WWTControl } from "@wwtelescope/engine";
 
 const originalRenderFrame = WWTControl.singleton.renderOneFrame.bind(WWTControl.singleton);
 export function renderOneFrame() {
@@ -14,22 +12,6 @@ export function renderOneFrame() {
       this.renderFrameCallback(this);
     } catch (error) {
       console.error(error);
-    }
-  }
-}
-
-export class TriangleList2D extends TriangleList {
-  draw(renderContext: RenderContext, opacity: number, cull: boolean) {
-    if (this.pure2D) {
-      this._initTriangleBuffer();
-      const $enum1 = ss.enumerate(this._triangleBuffers);
-      while ($enum1.moveNext()) {
-        const triBuffer = $enum1.current;
-        TriangleShader2D.use(renderContext, triBuffer.vertexBuffer, Color.fromArgb(255, 255, 255, 255), this.depthBuffered);
-        renderContext.gl.drawArrays(WEBGL.TRIANGLES, 0, triBuffer.count);
-      }
-    } else {
-      super.draw(renderContext, opacity, cull);
     }
   }
 }

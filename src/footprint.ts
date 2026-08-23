@@ -1,11 +1,49 @@
 /* eslint-disable */
 
-import { Color, Coordinates, Dates, RenderContext, Settings, SimpleLineList, SpaceTimeController, TriangleList, Vector3d, WWTControl } from "@wwtelescope/engine";
-import { horizontalToEquatorial } from "./utils";
-import { D2H, H2D } from "@wwtelescope/astro";
-import { TriangleList2D } from "./wwt-hacks";
+import { Annotation2, Poly2 } from "./Annotation2";
+import { Color, Matrix3d, RenderContext, Vector3d, WWTControl } from "@wwtelescope/engine";
+import { D2R } from "@wwtelescope/astro";
 
 type Point = [number, number];
+
+function executeWithTransforms(renderContext: RenderContext, callable: CallableFunction, transforms: {
+  world?: Matrix3d,
+  view?: Matrix3d,
+  projection?: Matrix3d,
+}) {
+
+  // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+  // @ts-expect-error
+  const oldWorld = options.world ? renderContext.get_world().clone() : renderContext.get_world();
+  // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+  // @ts-expect-error
+  const oldWorldBase = options.world ? renderContext.get_worldBase().clone() : renderContext.get_world();
+  // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+  // @ts-expect-error
+  const oldView = options.view ? renderContext.get_view().clone() : renderContext.get_view();
+  // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+  // @ts-expect-error
+  const oldProjection = options.projection ? renderContext.get_projection().clone() : renderContext.get_projection();
+
+  if (transforms.world) {
+    renderContext.set_worldBase(Matrix3d.multiplyMatrix(transforms.world, renderContext.get_world())); renderContext.set_world(renderContext.get_worldBase().clone());
+  }
+  if (transforms.view) {
+    renderContext.set_view(Matrix3d.multiplyMatrix(transforms.view, renderContext.get_view()));
+  }
+  if (transforms.projection) {
+    renderContext.set_projection(Matrix3d.multiplyMatrix(transforms.projection, renderContext.get_projection()));
+  }
+  renderContext.makeFrustum();
+
+  callable(renderContext);
+
+  renderContext.set_worldBase(oldWorldBase);
+  renderContext.set_world(oldWorld);
+  renderContext.set_view(oldView);
+  renderContext.set_projection(oldProjection);
+  renderContext.makeFrustum();
+}
 
 const corners: Point[][] =
 [[[359.99468507004264, -0.025734418244063445],
@@ -81,114 +119,74 @@ const corners: Point[][] =
   [0.27995993414475323, -0.08990933274855276],
   [0.4025665285872352, -0.08765786121144925]]]; 
 
-// const nRegions = corners.length;
-const nPoints = corners.reduce((currVal, corner) => currVal + corner.length, 0);
-
-const fakeControl = new WWTControl();
-fakeControl.renderContext = new RenderContext();
-
-const meanIndex = (index: number) => corners.reduce((currVal, corner) => currVal + corner.reduce((curr, pair) => curr + pair[index], 0), 0) / nPoints;
-
-// const meanRA = meanIndex(0);
-// const meanDec = meanIndex(1);
 const meanRA = 0;
 const meanDec = 0;
 const shiftedCorners: Point[][] = corners.map(corner => corner.map(pair => [pair[0] - meanRA, pair[1] - meanDec]));
-let positionedShiftedCorners: Point[][] = shiftedCorners;
-
-function getScreenPoints(wwt: WWTControl, worldPts: Point[]): Point[] {
-  return worldPts.map(pt => {
-    const screen = wwt.getScreenPointForCoordinates(pt[0] / 15, pt[1]);
-    return [screen.x, screen.y];
-  });
-}
-
-function _getWorldPoints(wwt: WWTControl, screenPts: Point[]): Point[] {
-  return screenPts.map(pt => {
-    const raDec = wwt.getCoordinatesForScreenPoint(...pt);
-    return [15 * (raDec.x + 720) / 360, raDec.y];
-  });
-}
-
-// NB: Clip space is the space [-1, 1]^2
-function convertScreenPointsToClip(wwt: WWTControl, screenPts: Point[][]): Point[][] {
-  const width = wwt.renderContext.width;
-  const height = wwt.renderContext.height;
-  const slopeH = 2 / width;
-  const interceptH = -1;
-  const slopeV = 2 / height;
-  const interceptV = -1;
-  const transform = (point: Point): Point => [point[0] * slopeH + interceptH, point[1] * slopeV + interceptV];
-  return screenPts.map(box => box.map(transform));
-}
 
 interface DrawFootprintOptions {
-  color: Color;
+  color: string;
   fill: boolean;
   fillOpacity: number;
 }
 
-let fakeRendered = false;
+let annotationsCreated = false;
+
 export function drawFootprint(wwt: WWTControl, options: DrawFootprintOptions) {
-  if (!fakeRendered) {
-    const shadow = document.getElementById("shadow") as HTMLCanvasElement;
-    positionedShiftedCorners = shiftedCorners.map(corner => corner.map(pair => [pair[0] + wwt.renderContext.get_RA() * 15, pair[1] + wwt.renderContext.get_dec()]));
-    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-    // @ts-ignore
-    fakeControl.canvas = shadow; fakeControl.renderContext.gl = shadow.getContext("webgl2"); fakeControl.renderContext.set_backgroundImageset(wwt.renderContext.get_backgroundImageset());
-    fakeControl.renderOneFrame();
-    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-    // @ts-ignore
-    fakeControl.renderContext.set_world(wwt.renderContext.get_world()); fakeControl.renderContext.set_view(wwt.renderContext.get_view()); fakeControl.renderContext.set_projection(wwt.renderContext.get_projection());
-    fakeRendered = true;
+  if (!annotationsCreated) {
+    shiftedCorners.forEach(box => {
+      const poly = new Poly2();
+      box.forEach(pt => poly.addPoint(...pt));
+      Annotation2.addAnnotation(poly);
+    });
+    annotationsCreated = true;
   }
-  const footprint = new SimpleLineList();
-  footprint.pure2D = true;
-  footprint.set_depthBuffered(true);
 
-  const camera = wwt.renderContext.viewCamera;
-  fakeControl.renderContext.viewCamera.zoom = camera.zoom;
-
-  // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-  // @ts-ignore
-  fakeControl.renderContext.set_projection(wwt.renderContext.get_projection());
-  const screenPoints = positionedShiftedCorners.map(box => getScreenPoints(fakeControl, box));
-  const clipPoints = convertScreenPointsToClip(fakeControl, screenPoints);
-
-  const triangles = new TriangleList2D();
-  triangles.pure2D = true;
-  triangles.depthBuffered = true;
-  const date = new Dates(0, 1);
-
-  clipPoints.forEach(box => {
-    const vectors = box.map(pt => Vector3d.create(...pt, 0));
-    for (let i = 0; i < box.length - 1; i++) {
-      footprint.addLine(vectors[i], vectors[i+1]);
-    }
-    footprint.addLine(vectors[box.length - 1], vectors[0]);
-
-    if (options.fill) {
-      const triangleColor = Color.fromArgb(Math.round(options.fillOpacity * 255), options.color.r, options.color.g, options.color.b);
-      triangles.addTriangle(vectors[0], vectors[1], vectors[2], triangleColor, date);
-      triangles.addTriangle(vectors[2], vectors[3], vectors[0], triangleColor, date);
-    }
+  (Annotation2.annotations as Poly2[]).forEach(ann => {
+    ann.set_fill(options.fill);
+    ann.set_fillColor(options.color);
+    ann.set_lineColor(options.color);
   });
 
-  // if (options.fill) {
-  //   const triangleColor = Color.fromArgb(Math.round(options.fillOpacity * 255), options.color.r, options.color.g, options.color.b);
-  //   const ra = wwt.renderContext.get_RA() * H2D;
-  //   const dec = wwt.renderContext.get_dec();
-  //   shiftedCorners.forEach(box => {
-  //     console.log(box.map(pt => [pt[0] + ra, pt[1] + dec]));
-  //     const vectors = box.map(pt => Coordinates.raDecTo3d((pt[0] + ra) * D2H, pt[1] + dec));
-  //     triangles.addSubdividedTriangles(vectors[0], vectors[1], vectors[2], triangleColor, date, subdivisions);
-  //     triangles.addSubdividedTriangles(vectors[2], vectors[3], vectors[0], triangleColor, date, subdivisions);
-  //   });
-  // }
+  // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+  // @ts-expect-error
+  window.Annotation2 = Annotation2;
 
-  footprint.drawLines(wwt.renderContext, 1, options.color);
-
-  if (options.fill) {
-     triangles.draw(wwt.renderContext, options.fillOpacity, true);
+  function draw(renderContext: RenderContext) {
+    Annotation2.prepBatch(renderContext);
+    const annotations = Annotation2.annotations as Annotation2[];
+    for (const item of annotations) {
+      item.draw(renderContext);
+    }
+    Annotation2.drawBatch(renderContext);
   }
+
+  // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+  // @ts-expect-error
+  const startWorld = Matrix3d.rotationYawPitchRoll(-(meanRA - 90) * D2R, -meanDec * D2R, 0); let worldMatrix = wwt.renderContext.get_world().clone();
+  worldMatrix.invert();
+  worldMatrix = Matrix3d.multiplyMatrix(startWorld, worldMatrix);
+
+  // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+  // @ts-expect-error
+  const startView = Matrix3d.lookAtLH(
+    Vector3d.create(0, 0, 0),
+    Vector3d.create(0, 0, -1), 
+    Vector3d.create(0, 1, 0)
+  );
+  // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+  // @ts-expect-error
+  const viewMatrix = Matrix3d.lookAtLH(
+    Vector3d.create(0, 0, 0),
+    Vector3d.create(0, 0, -1), 
+    Vector3d.create(Math.sin(wwt.renderContext.viewCamera.rotation), Math.cos(wwt.renderContext.viewCamera.rotation), 0)
+  );
+  viewMatrix.invert();
+  // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+  // @ts-expect-error
+  viewMatrix = Matrix3d.multiplyMatrix(startView, viewMatrix);
+
+  executeWithTransforms(wwt.renderContext, draw, {
+    world: worldMatrix,
+    view: viewMatrix,
+  });
 }
