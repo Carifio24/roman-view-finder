@@ -18,6 +18,8 @@ declare module "@wwtelescope/engine" {
 
   namespace Matrix3d {
     function multiplyMatrix(matrix1: Matrix3d, matrix2: Matrix3d): Matrix3d;
+    function rotationYawPitchRoll(yaw: number, pitch: number, roll: number): Matrix3d;
+    function lookAtLH(cameraPosition: Vector3d, cameraTarget: Vector3d, cameraUpVector: Vector3d): Matrix3d;
   }
 
   interface Vector3d {}

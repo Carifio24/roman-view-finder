@@ -160,29 +160,21 @@ export function drawFootprint(wwt: WWTControl, options: DrawFootprintOptions) {
     Annotation2.drawBatch(renderContext);
   }
 
-  // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-  // @ts-expect-error
   const startWorld = Matrix3d.rotationYawPitchRoll(-(meanRA - 90) * D2R, -meanDec * D2R, 0); let worldMatrix = wwt.renderContext.get_world().clone();
   worldMatrix.invert();
   worldMatrix = Matrix3d.multiplyMatrix(startWorld, worldMatrix);
 
-  // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-  // @ts-expect-error
   const startView = Matrix3d.lookAtLH(
     Vector3d.create(0, 0, 0),
     Vector3d.create(0, 0, -1), 
     Vector3d.create(0, 1, 0)
   );
-  // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-  // @ts-expect-error
-  const viewMatrix = Matrix3d.lookAtLH(
+  let viewMatrix = Matrix3d.lookAtLH(
     Vector3d.create(0, 0, 0),
     Vector3d.create(0, 0, -1), 
     Vector3d.create(Math.sin(wwt.renderContext.viewCamera.rotation), Math.cos(wwt.renderContext.viewCamera.rotation), 0)
   );
   viewMatrix.invert();
-  // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-  // @ts-expect-error
   viewMatrix = Matrix3d.multiplyMatrix(startView, viewMatrix);
 
   executeWithTransforms(wwt.renderContext, draw, {
